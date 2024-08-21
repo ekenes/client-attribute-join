@@ -5,6 +5,14 @@
     <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
     <title>Client attribute join</title>
 
+    <script>
+      var esriConfig = {
+        has: {
+          "featurelayer-pbf": 0
+        }
+      }
+    </script>
+
     <link rel="stylesheet" href="https://jsdev.arcgis.com/next/esri/themes/light/main.css"/>
     <script src="https://jsdev.arcgis.com/next/"></script>
 
@@ -25,8 +33,9 @@
         "esri/views/MapView",
         "esri/smartMapping/renderers/color",
         "esri/widgets/Legend",
-        "esri/request"
-      ], function (Map, FeatureLayer, MapView, colorRendererCreator, Legend, esriRequest) {
+        "esri/request",
+        "esri/config",
+      ], function (Map, FeatureLayer, MapView, colorRendererCreator, Legend, esriRequest, esriConfig) {
 
         (async () => {
 
@@ -34,6 +43,7 @@
             portalItem: {
               id: "d3374b5003d548ea8fe72624326e8573"
             },
+            outFields: ["FIPS"],
             renderer: {
               type: "simple",
               symbol: {
@@ -47,87 +57,9 @@
             }
           });
 
-          await geometryLayer.load();
-
-          const field = "MP18002h_B";
-          const key = "FIPS";
-
-          async function queryFeatures(){
-
-            const query = geometryLayer.createQuery();
-
-            query.outFields = [ key ];
-            query.where = "1=1";
-            query.returnGeometry = true;
-
-            let allFeatures = [];
-            const num = 2000;
-
-            for (let start = 0; start < start+num; start+=num){
-              query.start = start;
-              query.num = num;
-              const { features, exceededTransferLimit} = await geometryLayer.queryFeatures(query);
-
-              allFeatures.splice(allFeatures.length, 0, ...features);
-
-              if(!exceededTransferLimit){
-                console.log("END! ");
-                break;
-              } else {
-                console.log("EXCEEDED!")
-              }
-            }
-            return allFeatures;
-          }
-
-          function createDictionary(features){
-            const dictionary = {};
-
-            for(let i=0; i < features.length; i++){
-              const { attributes: { FIPS, MP18002h_B } } = features[i];
-              dictionary[FIPS] = MP18002h_B;
-            }
-            return dictionary;
-          }
-
-          async function createJoinedLayer(){
-            const features = await queryFeatures();
-            const { data } = await esriRequest("data.json");
-
-            for(let i=0; i < features.length; i++){
-              const { attributes: { FIPS, MP18002h_B } } = features[i];
-              features[i].attributes["num_cars"] = data[FIPS];
-            }
-
-            const joinedLayer = new FeatureLayer({
-              objectIdField: geometryLayer.objectIdField,
-              fields: [ {
-                name: geometryLayer.objectIdField,
-                type: "oid"
-              }, {
-                name: "FIPS",
-                type: "string"
-              }, {
-                name: "num_cars",
-                type: "integer"
-              }],
-              geometryType: geometryLayer.geometryType,
-              source: features,
-              // if schema of two layers is different,
-              // popup will have empty fields shown
-              popupTemplate: {
-                title: "Joined Layer",
-                content: "Households with 2 vehicles: {num_cars}"
-              },
-              opacity: 1
-            });
-
-            return joinedLayer;
-          }
-
           const map = new Map({
             basemap: "gray-vector",
-            layers: [ ],
+            layers: [ geometryLayer ],
             popup: {
               defaultPopupTemplateEnabled: true
             }
@@ -148,19 +80,45 @@
             }
           });
 
-          view.ui.add(new Legend({ view }), "bottom-left");
+          const key = "FIPS";
 
-          const layer = await createJoinedLayer();
-          view.map.add(layer);
-
-          const { renderer } = await colorRendererCreator.createContinuousRenderer({
-            view,
-            layer,
-            field: "num_cars",
-            theme: "above-and-below"
+          const { data } = await esriRequest("data.json");
+          console.log(data);
+          esriConfig.request.interceptors.push({
+            urls: geometryLayer.url,
+            after: function(params) {
+              if(params.data?.features?.length) {
+                params.data.features.forEach(feature => {
+                  if( data[feature.attributes[key]] ){
+                    feature.attributes = {
+                      ...feature.attributes,
+                      num_cars: data[feature.attributes[key]]
+                    }
+                  }
+                });
+                console.log(params.data);
+              }
+            }
           });
 
-          layer.renderer = renderer;
+          view.ui.add(new Legend({ view }), "bottom-left");
+
+          geometryLayer.fields = [{
+            name: "num_cars",
+            alias: "Number of cars",
+            type: "integer"
+          }];
+
+          console.log(geometryLayer);
+
+          // const { renderer } = await colorRendererCreator.createContinuousRenderer({
+          //   view,
+          //   layer: geometryLayer,
+          //   field: "num_cars",
+          //   theme: "above-and-below"
+          // });
+
+          // geometryLayer.renderer = renderer;
         })()
 
       });
