@@ -5,14 +5,6 @@
     <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
     <title>Client attribute join</title>
 
-    <script>
-      var esriConfig = {
-        has: {
-          "featurelayer-pbf": 0
-        }
-      }
-    </script>
-
     <link rel="stylesheet" href="https://jsdev.arcgis.com/next/esri/themes/light/main.css"/>
     <script src="https://jsdev.arcgis.com/next/"></script>
 
@@ -39,10 +31,14 @@
 
         (async () => {
 
+          const { data } = await esriRequest("data.json");
+          console.log(JSON.stringify(data));
+
           const geometryLayer = new FeatureLayer({
             portalItem: {
               id: "d3374b5003d548ea8fe72624326e8573"
             },
+            definitionExpression: "STATE = 'HI'",
             outFields: ["FIPS"],
             renderer: {
               type: "simple",
@@ -53,9 +49,22 @@
                   color: "white"
                 },
                 color: "black"
-              }
+              },
+              visualVariables: [{
+                type: "color",
+                valueExpression: `
+                  var data = ${JSON.stringify(data)};
+                  return data[Text($feature.FIPS)];
+                `,
+                stops: [
+                  { value: 0, color: "white" },
+                  { value: 10000, color: "red" }
+                ]
+              }]
             }
           });
+
+          console.log(JSON.stringify(geometryLayer.renderer.visualVariables[0].valueExpression));
 
           const map = new Map({
             basemap: "gray-vector",
@@ -80,45 +89,7 @@
             }
           });
 
-          const key = "FIPS";
-
-          const { data } = await esriRequest("data.json");
-          console.log(data);
-          esriConfig.request.interceptors.push({
-            urls: geometryLayer.url,
-            after: function(params) {
-              if(params.data?.features?.length) {
-                params.data.features.forEach(feature => {
-                  if( data[feature.attributes[key]] ){
-                    feature.attributes = {
-                      ...feature.attributes,
-                      num_cars: data[feature.attributes[key]]
-                    }
-                  }
-                });
-                console.log(params.data);
-              }
-            }
-          });
-
           view.ui.add(new Legend({ view }), "bottom-left");
-
-          geometryLayer.fields = [{
-            name: "num_cars",
-            alias: "Number of cars",
-            type: "integer"
-          }];
-
-          console.log(geometryLayer);
-
-          // const { renderer } = await colorRendererCreator.createContinuousRenderer({
-          //   view,
-          //   layer: geometryLayer,
-          //   field: "num_cars",
-          //   theme: "above-and-below"
-          // });
-
-          // geometryLayer.renderer = renderer;
         })()
 
       });
